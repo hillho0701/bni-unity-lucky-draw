@@ -1,0 +1,287 @@
+
+<!DOCTYPE html>
+<html lang="zh-HK">
+<head>
+<meta charset="UTF-8">
+<title>BNI Unity Chapter 抽獎</title>
+
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<style>
+html, body {
+    margin: 0;
+    padding: 0;
+    width: 100vw;
+    height: 100vh;
+    overflow: hidden;
+    font-family: "Microsoft JhengHei", Arial, sans-serif;
+    background: radial-gradient(circle at top, #1c3761, #0b1f3a);
+    color: #f5d27a;
+}
+
+/* ===== Header ===== */
+header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    padding: 24px 48px;
+    box-sizing: border-box;
+}
+
+.header-left {
+    display: flex;
+    align-items: center;
+}
+
+.header-left img {
+    height: 110px; /* ✅ Logo 加大 */
+    margin-right: 24px;
+}
+
+.header-left h1 {
+    margin: 0;
+    font-size: clamp(30px, 3vw, 44px);
+}
+
+.header-right {
+    text-align: right;
+    font-size: clamp(16px, 1.6vw, 22px);
+    line-height: 1.4;
+    color: #ddd;
+}
+
+/* ===== 主體區 ===== */
+main {
+    display: flex;
+    height: calc(100vh - 160px);
+}
+
+/* 三欄比例 1 : 2 : 1 */
+.panel {
+    padding: 24px;
+    box-sizing: border-box;
+}
+
+#left { flex: 1; }
+#center { flex: 2; text-align: center; }
+#right { flex: 1; }
+
+/* ===== 左：輸入 ===== */
+textarea {
+    width: 100%;
+    height: 220px;
+    font-size: clamp(15px, 1.2vw, 18px);
+    padding: 12px;
+}
+
+button {
+    margin-top: 16px;
+    padding: 14px 32px;
+    font-size: clamp(16px, 1.4vw, 22px);
+    background: linear-gradient(135deg, #f5d27a, #c9a23f);
+    color: #0b1f3a;
+    border: none;
+    border-radius: 999px;
+    cursor: pointer;
+    font-weight: bold;
+}
+
+/* ===== 中：即時中獎顯示（動畫） ===== */
+#currentWinner {
+    font-size: clamp(40px, 4.5vw, 72px);
+    font-weight: bold;
+    color: #ffd966;
+    margin-bottom: 14px;
+    min-height: 1.5em;
+}
+
+/* 🔥 動畫效果 */
+.animate-win {
+    animation: popFlash 1s ease-out;
+}
+
+@keyframes popFlash {
+    0%   { transform: scale(1);   opacity: 1; }
+    20%  { transform: scale(1.15); opacity: 0.8; }
+    40%  { transform: scale(1);   opacity: 1; }
+    60%  { transform: scale(1.12); opacity: 0.85; }
+    100% { transform: scale(1);   opacity: 1; }
+}
+
+/* ===== 輪盤 ===== */
+canvas {
+    max-width: 90%;
+    height: auto;
+}
+
+/* ===== 右：得獎者清單 ===== */
+.winner-item {
+    font-size: clamp(20px, 1.8vw, 32px);
+    margin: 12px 0;
+    font-weight: bold;
+}
+</style>
+</head>
+
+<body>
+
+<header>
+    <div class="header-left">
+        <img src="unity-logo.png" alt="BNI Unity Logo">
+        <h1>BNI Unity Chapter</h1>
+    </div>
+    <div class="header-right">
+        <strong>Givers Gain精神</strong><br>
+        凡交出引薦及帶來嘉賓的會員<br>
+        都有抽獎機會
+    </div>
+</header>
+
+<main>
+
+<!-- 左 -->
+<div id="left" class="panel">
+    <h2>🎟️ 抽獎池（已載入）</h2>
+    <textarea id="names" placeholder="每行 = 一次抽獎機會（同名可重複）"></textarea>
+    <button onclick="loadNames()">載入名單</button>
+</div>
+
+<!-- 中 -->
+<div id="center" class="panel">
+    <div id="currentWinner"></div>
+    <canvas id="wheel" width="600" height="600"></canvas>
+</div>
+
+<!-- 右 -->
+<div id="right" class="panel">
+    <h2>🏆 得獎者</h2>
+    <div id="history"></div>
+    <button onclick="start()">開始抽獎</button>
+</div>
+
+</main>
+
+<script>
+const canvas = document.getElementById("wheel");
+const ctx = canvas.getContext("2d");
+
+let entries = [];
+let angle = 0;
+let spinning = false;
+let winnerCount = 0;
+let history = [];
+
+// 七彩色，同名同色
+const colorMap = {};
+function getColor(name) {
+    if (!colorMap[name]) {
+        const hue = (Object.keys(colorMap).length * 47) % 360;
+        colorMap[name] = `hsl(${hue}, 75%, 65%)`;
+    }
+    return colorMap[name];
+}
+
+function loadNames() {
+    entries = document.getElementById("names").value
+        .split("\n").map(n => n.trim()).filter(n => n);
+
+    angle = 0;
+    winnerCount = 0;
+    history = [];
+    document.getElementById("history").innerHTML = "";
+    document.getElementById("currentWinner").innerText = "";
+    drawWheel();
+}
+
+function updateHistory() {
+    const h = document.getElementById("history");
+    h.innerHTML = "";
+    history.forEach(item => {
+        const d = document.createElement("div");
+        d.className = "winner-item";
+        d.style.color = getColor(item.name);
+        d.textContent = `第 ${item.no}位中獎者：${item.name}`;
+        h.appendChild(d);
+    });
+}
+
+function drawWheel() {
+    if (!entries.length) return;
+    const size = Math.min(canvas.clientWidth, canvas.clientHeight);
+    canvas.width = size;
+    canvas.height = size;
+    const r = size / 2;
+    ctx.clearRect(0, 0, size, size);
+    const slice = 2 * Math.PI / entries.length;
+
+    entries.forEach((name, i) => {
+        const start = angle + i * slice;
+        ctx.beginPath();
+        ctx.moveTo(r, r);
+        ctx.arc(r, r, r, start, start + slice);
+        ctx.fillStyle = getColor(name);
+        ctx.fill();
+
+        ctx.save();
+        ctx.translate(r, r);
+        ctx.rotate(start + slice / 2);
+        ctx.textAlign = "right";
+        ctx.font = `${Math.max(14, size * 0.03)}px Arial`;
+        ctx.fillStyle = "#000";
+        ctx.fillText(name, r - 14, 6);
+        ctx.restore();
+    });
+
+    ctx.fillStyle = "#f5d27a";
+    ctx.beginPath();
+    ctx.moveTo(r, 0);
+    ctx.lineTo(r - 18, 34);
+    ctx.lineTo(r + 18, 34);
+    ctx.fill();
+}
+
+function start() {
+    if (spinning || !entries.length) return;
+    spinning = true;
+    let speed = Math.random() * 0.85 + 0.75;
+
+    function spin() {
+        speed *= 0.985;
+        angle += speed;
+        drawWheel();
+
+        if (speed < 0.002) {
+            const slice = 2 * Math.PI / entries.length;
+            const index = Math.floor(
+                (2 * Math.PI - (angle % (2 * Math.PI))) / slice
+            ) % entries.length;
+
+            const name = entries[index];
+            winnerCount++;
+
+            entries = entries.filter(n => n !== name);
+            history.unshift({ no: winnerCount, name });
+            history = history.slice(0, 10);
+
+            const cw = document.getElementById("currentWinner");
+            cw.innerText = `🎉 中獎者：${name}`;
+            cw.classList.remove("animate-win");
+            void cw.offsetWidth; // reset animation
+            cw.classList.add("animate-win");
+
+            spinning = false;
+            updateHistory();
+            drawWheel();
+            return;
+        }
+        requestAnimationFrame(spin);
+    }
+    spin();
+}
+
+window.addEventListener("resize", drawWheel);
+</script>
+
+</body>
+</html>
+``
